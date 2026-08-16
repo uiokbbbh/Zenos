@@ -1,3 +1,12 @@
 {
-  "announcements": []
+  "announcements": [
+    {
+      "id": "1",
+      "title": "ZEN OS V19 正式上线",
+      "content": "ZEN OS V19 已正式上线，欢迎使用。",
+      "date": "2026-08-16",
+      "pinned": true,
+      "isNew": true
+    }
+  ]
 }
