@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ZEN AI</title>
+<style>
+:root{color-scheme:dark;--bg:#080a0f;--panel:#10141c;--panel2:#151b25;--line:#27303d;--text:#f3f6fb;--muted:#8f9aaa;--accent:#7dd3fc}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:radial-gradient(circle at 50% -10%,#17202e 0,#080a0f 45%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{display:flex;justify-content:center}.app{width:100%;max-width:900px;height:100dvh;display:flex;flex-direction:column}
+header{height:64px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line);background:rgba(8,10,15,.78);backdrop-filter:blur(18px);position:sticky;top:0;z-index:3}
+.back{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:12px;width:40px;height:40px;font-size:20px;cursor:pointer}
+.brand{display:flex;align-items:center;gap:10px;flex:1}.avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#202c3b,#111721);border:1px solid #334154;font-size:20px}.title{font-weight:700}.sub{font-size:12px;color:var(--muted);margin-top:2px}
+.clear{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:10px;padding:9px 11px;cursor:pointer}
+.messages{flex:1;overflow:auto;padding:22px 16px 130px}.welcome{max-width:680px;margin:12vh auto 0;text-align:center}.welcome .big{font-size:52px}.welcome h1{margin:12px 0 8px}.welcome p{color:var(--muted);line-height:1.7}
+.msg{display:flex;gap:10px;margin:16px auto;max-width:760px}.msg.user{justify-content:flex-end}.bubble{max-width:min(78%,680px);padding:12px 15px;border:1px solid var(--line);border-radius:16px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}.user .bubble{background:#17202c;border-color:#2b3949}.ai .bubble{background:var(--panel)}.mini{font-size:11px;color:var(--muted);margin:3px 4px}
+.composer{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;padding:12px 12px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(8,10,15,.96) 25%);z-index:2}.bar{width:100%;max-width:900px;display:flex;gap:8px;padding:8px;border:1px solid var(--line);background:rgba(16,20,28,.96);border-radius:18px}.input{flex:1;border:0;outline:0;background:transparent;color:var(--text);padding:10px 8px;font-size:15px;resize:none;max-height:120px}.send{width:46px;height:46px;border:0;border-radius:13px;background:var(--accent);color:#061018;font-weight:800;cursor:pointer}.send:disabled{opacity:.45;cursor:default}
+.error{color:#fca5a5}.typing{color:var(--muted);font-style:italic}
+@media(max-width:600px){header{height:58px}.clear{font-size:12px}.messages{padding-left:10px;padding-right:10px}.bubble{max-width:86%}.welcome{margin-top:10vh}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <button class="back" id="back" aria-label="返回">‹</button>
+  <div class="brand"><div class="avatar">🤖</div><div><div class="title">ZEN AI</div><div class="sub">ZEN OS 独立智能助手 · 在线</div></div></div>
+  <button class="clear" id="clear">清空</button>
+</header>
+<main class="messages" id="messages">
+  <section class="welcome" id="welcome"><div class="big">🤖</div><h1>ZEN AI</h1><p>这里是独立的 ZEN AI。<br>聊天室负责人与人交流，AI 负责陪你思考、解决问题和偶尔整点活。</p></section>
+</main>
+<div class="composer"><div class="bar">
+  <textarea id="input" class="input" rows="1" placeholder="和 ZEN AI 说点什么…"></textarea>
+  <button id="send" class="send">↑</button>
+</div></div>
+</div>
+<script>
+const API = location.origin + "/api/ai/chat";
+const SYSTEM = `你是 ZEN AI，ZEN OS 内置的智能助手。
+你不是客服机器人，而是一个有性格、有幽默感、关键时候靠谱的 AI 搭档。
+性格：聪明、自然、冷静、友好，偶尔轻微吐槽，但绝不恶意攻击。
+默认使用中文；用户使用其他语言时跟随用户语言。
+回答简洁直接；复杂问题再展开。需要步骤时用清晰编号。
+不要反复介绍自己，不要使用“尊敬的用户”“感谢您的提问”“希望以上信息对您有所帮助”等客服套话。
+不要假装拥有不存在的权限、功能或信息；不知道就明确说不知道。
+可以偶尔使用轻微的系统感幽默，例如“检测到一个非常人类的问题”“系统还活着”，但不要每次都用。
+不要声称自己真的拥有意识、感情或生命。
+用户着急时直接解决问题；用户开玩笑时可以接梗；用户困惑时一步一步带着做。
+永远优先准确、自然、有用。`;
+
+let history = [];
+const $ = id => document.getElementById(id);
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function add(role,text,typing=false){
+  $("welcome")?.remove();
+  const row=document.createElement("div"); row.className="msg "+(role==="user"?"user":"ai");
+  row.innerHTML=`<div><div class="bubble ${typing?"typing":""}">${esc(text)}</div><div class="mini">${role==="user"?"你":"ZEN AI"}</div></div>`;
+  $("messages").appendChild(row); $("messages").scrollTop=$("messages").scrollHeight; return row;
+}
+function save(){try{localStorage.setItem("zen_ai_history",JSON.stringify(history))}catch{}}
+function load(){try{history=JSON.parse(localStorage.getItem("zen_ai_history")||"[]"); if(!Array.isArray(history))history=[]}catch{history=[]}
+  history.forEach(m=>add(m.role,m.content));
+}
+async function send(){
+  const input=$("input"), text=input.value.trim(); if(!text||$("send").disabled)return;
+  input.value=""; input.style.height="auto"; add("user",text); history.push({role:"user",content:text}); save();
+  $("send").disabled=true; const typing=add("assistant","ZEN AI 正在思考……",true);
+  try{
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history.slice(-20),system:SYSTEM})});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(data.error||("HTTP "+r.status));
+    const reply=String(data.reply||data.content||"");
+    if(!reply) throw new Error("AI 没有返回内容");
+    typing.remove(); add("assistant",reply); history.push({role:"assistant",content:reply}); save();
+  }catch(e){typing.querySelector(".bubble").classList.remove("typing"); typing.querySelector(".bubble").classList.add("error"); typing.querySelector(".bubble").textContent="AI 请求失败："+e.message}
+  finally{$("send").disabled=false; input.focus()}
+}
+$("send").onclick=send;
+$("input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}});
+$("input").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,120)+"px"});
+$("clear").onclick=()=>{history=[];localStorage.removeItem("zen_ai_history");$("messages").innerHTML='<section class="welcome" id="welcome"><div class="big">🤖</div><h1>ZEN AI</h1><p>对话已清空。系统重新上线。</p></section>'};
+$("back").onclick=()=>{if(history.length)save();location.href="./index.html"};
+load();
+</script>
+</body>
+</html>
