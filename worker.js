@@ -5,8 +5,7 @@ export default {
     const url = new URL(request.url);
 
     // ==============================
-    // 1. CORS 预检请求
-    // 必须放在 API 转发之前
+    // 1. CORS 预检
     // ==============================
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -24,37 +23,38 @@ export default {
 
     // ==============================
     // 2. /api 和 /api/* 转发到 Render
+    //
+    // 例如：
+    // /api/health
+    // ↓
+    // https://zenos-91.onrender.com/api/health
     // ==============================
-    if (
-      url.pathname === "/api" ||
-      url.pathname.startsWith("/api/")
-    ) {
+    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       const targetUrl =
-        RENDER_API +
-        url.pathname +
-        url.search;
+        RENDER_API + url.pathname + url.search;
+
+      // 复制原请求 Headers
+      const headers = new Headers(request.headers);
+
+      // 告诉 Render 原始请求来自哪里
+      headers.set("X-Forwarded-Host", url.host);
+      headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
+
+      // 构造新的转发请求
+      const proxyRequest = new Request(targetUrl, {
+        method: request.method,
+        headers,
+        body:
+          request.method === "GET" || request.method === "HEAD"
+            ? undefined
+            : request.body,
+        redirect: "follow",
+      });
 
       try {
-        const headers = new Headers(request.headers);
-
-        // 告诉 Render 原始请求信息
-        headers.set("X-Forwarded-Host", url.host);
-        headers.set("X-Forwarded-Proto", "https");
-
-        const proxyRequest = new Request(targetUrl, {
-          method: request.method,
-          headers,
-          body:
-            request.method === "GET" ||
-            request.method === "HEAD"
-              ? undefined
-              : request.body,
-          redirect: "follow",
-        });
-
         const response = await fetch(proxyRequest);
 
-        // 复制 Render 返回的响应
+        // 复制 Render 返回的 Headers
         const responseHeaders = new Headers(response.headers);
 
         // CORS
@@ -82,14 +82,13 @@ export default {
         return new Response(
           JSON.stringify({
             ok: false,
-            error: "Render API 连接失败",
+            error: "API 服务器连接失败",
             message: String(error),
           }),
           {
             status: 502,
             headers: {
-              "Content-Type":
-                "application/json; charset=utf-8",
+              "Content-Type": "application/json; charset=UTF-8",
               "Access-Control-Allow-Origin": "*",
             },
           }
@@ -98,7 +97,7 @@ export default {
     }
 
     // ==============================
-    // 3. 其他请求交给 Cloudflare Assets
+    // 3. 其他请求交给静态资源
     // ==============================
     return env.ASSETS.fetch(request);
   },
