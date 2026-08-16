@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ZEN AI 管理中心</title>
+<style>
+:root{color-scheme:dark;--bg:#080a0f;--panel:#111722;--line:#27303d;--text:#f4f7fb;--muted:#8f9aaa;--accent:#7dd3fc;--danger:#fca5a5}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#182235,#080a0f 48%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}.wrap{max-width:900px;margin:auto;padding:20px 14px 50px}.head{display:flex;align-items:center;gap:10px;margin-bottom:18px}.head h1{margin:0;font-size:24px;flex:1}.btn{padding:11px 14px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.05);color:var(--text);cursor:pointer}.primary{background:linear-gradient(135deg,#6878ff,#865fff);border-color:transparent}.danger{color:var(--danger)}.panel{padding:18px;border:1px solid var(--line);border-radius:18px;background:rgba(17,23,34,.88);margin-bottom:14px}.title{font-weight:900;font-size:17px;margin-bottom:8px}.muted{color:var(--muted);font-size:12px;line-height:1.65}.input,.area{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:rgba(0,0,0,.18);color:var(--text);outline:none;margin-top:7px}.area{min-height:120px;resize:vertical}.row{display:flex;gap:9px}.row>*{flex:1}.status{padding:10px 12px;border-radius:11px;background:rgba(125,211,252,.08);color:var(--muted);margin-bottom:12px}.hidden{display:none}.memoryUser{font-weight:800;margin:10px 0 5px}.mem{padding:8px;border:1px solid var(--line);border-radius:9px;margin:5px 0;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="head"><button class="btn" id="back">‹ 返回 AI</button><h1>⚙️ ZEN AI 管理中心</h1></div>
+<div class="panel" id="loginPanel">
+  <div class="title">管理员验证</div>
+  <div class="muted">输入 Render 环境变量 <b>ADMIN_API_KEY</b> 对应的值。密钥只发送给你的 ZEN OS API。</div>
+  <input id="key" class="input" type="password" placeholder="ADMIN_API_KEY">
+  <button id="login" class="btn primary" style="width:100%;margin-top:9px">进入管理中心</button>
+  <div id="loginMsg" class="muted" style="margin-top:8px"></div>
+</div>
+<div id="adminPanel" class="hidden">
+  <div class="panel"><div class="title">系统状态</div><div id="status" class="status">读取中……</div></div>
+  <div class="panel">
+    <div class="title">AI 人设</div>
+    <div class="muted">这些设置会进入服务器端 system prompt，前端不会直接发送 API Key。</div>
+    <input id="name" class="input" placeholder="AI 名称">
+    <input id="avatar" class="input" placeholder="头像 Emoji">
+    <textarea id="persona" class="area" placeholder="性格、人设"></textarea>
+    <textarea id="style" class="area" placeholder="回答风格"></textarea>
+    <textarea id="systemPrompt" class="area" style="min-height:220px" placeholder="系统提示词"></textarea>
+    <div class="row" style="margin-top:9px"><button id="save" class="btn primary">保存配置</button><button id="reset" class="btn danger">恢复默认</button></div>
+  </div>
+  <div class="panel">
+    <div class="title">长期记忆总览</div>
+    <div class="muted">管理员可以看到当前服务保存的记忆用户数量及内容。若不需要管理员查看，可以直接不使用此区域。</div>
+    <button id="loadMemory" class="btn" style="margin-top:9px">读取记忆</button>
+    <div id="memory"></div>
+  </div>
+</div>
+</div>
+<script>
+const API="https://zenos-91.onrender.com/api";
+const $=id=>document.getElementById(id);let key="";
+function auth(){return {Authorization:"Bearer "+key,"Content-Type":"application/json"}}
+async function api(path,opt={}){const r=await fetch(API+path,{...opt,headers:{...auth(),...(opt.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||("HTTP "+r.status));return d}
+async function enter(){
+  key=$("key").value.trim();if(!key)return;
+  try{const d=await api("/admin/ai/config");fill(d.config);$("loginPanel").classList.add("hidden");$("adminPanel").classList.remove("hidden");$("status").textContent="管理员已验证 · AI 配置可修改";loadMemory()}catch(e){$("loginMsg").textContent="验证失败："+e.message;key=""}
+}
+function fill(c){$("name").value=c.name||"";$("avatar").value=c.avatar||"";$("persona").value=c.persona||"";$("style").value=c.style||"";$("systemPrompt").value=c.systemPrompt||""}
+$("login").onclick=enter;$("key").addEventListener("keydown",e=>{if(e.key==="Enter")enter()});
+$("save").onclick=async()=>{try{const d=await api("/admin/ai/config",{method:"PUT",body:JSON.stringify({name:$("name").value,avatar:$("avatar").value,persona:$("persona").value,style:$("style").value,systemPrompt:$("systemPrompt").value})});fill(d.config);$("status").textContent="已保存 · "+new Date().toLocaleTimeString()}catch(e){alert(e.message)}};
+$("reset").onclick=async()=>{if(!confirm("恢复默认 ZEN AI 人设？"))return;try{const d=await api("/admin/ai/reset",{method:"POST",body:"{}"});fill(d.config)}catch(e){alert(e.message)}};
+$("loadMemory").onclick=async()=>{try{const d=await api("/admin/ai/memory");const box=$("memory");box.innerHTML="";Object.entries(d.memory||{}).forEach(([uid,list])=>{const wrap=document.createElement("div");wrap.className="memoryUser";wrap.textContent=uid;list.forEach(m=>{const x=document.createElement("div");x.className="mem";x.textContent=m.text;wrap.appendChild(x)});box.appendChild(wrap)});if(!box.children.length)box.innerHTML='<div class="muted">暂无记忆。</div>'}catch(e){alert(e.message)}};
+$("back").onclick=()=>location.href="./ai.html";
+</script>
+</body>
+</html>
