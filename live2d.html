@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZENOS · 照片 Live2D</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #090b10;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+}
+
+.container {
+  max-width: 1000px;
+  margin: auto;
+  padding: 20px;
+}
+
+.card {
+  background: #121722;
+  border: 1px solid #263044;
+  border-radius: 18px;
+  padding: 18px;
+}
+
+h1 {
+  margin-top: 0;
+}
+
+.stage {
+  width: 100%;
+  max-width: 500px;
+  aspect-ratio: 3 / 4;
+  margin: auto;
+  background: #05070a;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#avatar {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: 50% 42%;
+}
+
+video {
+  width: 100%;
+  max-width: 500px;
+  margin-top: 20px;
+  border-radius: 16px;
+  display: none;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+button,
+label {
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #2d6cdf;
+  color: white;
+  cursor: pointer;
+}
+
+.status {
+  margin-top: 15px;
+  color: #aab4c3;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="card">
+
+<h1>ZENOS · 照片 Live2D</h1>
+
+<p>
+上传一张人物照片，然后开启摄像头，让头像跟随你的脸部动作。
+</p>
+
+<div class="stage">
+  <img id="avatar" alt="请上传照片">
+</div>
+
+<div class="controls">
+
+<label>
+上传照片
+<input
+  id="photo"
+  type="file"
+  accept="image/*"
+  hidden
+>
+</label>
+
+<button id="start">
+开启摄像头
+</button>
+
+<button id="stop">
+停止摄像头
+</button>
+
+</div>
+
+<div id="status" class="status">
+请先上传人物照片。
+</div>
+
+<video
+  id="video"
+  autoplay
+  playsinline
+  muted
+></video>
+
+</div>
+
+</div>
+
+<script type="module">
+
+import {
+  FaceLandmarker,
+  FilesetResolver
+}
+from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm";
+
+
+const avatar =
+  document.getElementById("avatar");
+
+const photo =
+  document.getElementById("photo");
+
+const video =
+  document.getElementById("video");
+
+const status =
+  document.getElementById("status");
+
+
+let stream = null;
+
+let landmarker = null;
+
+let animationFrame = null;
+
+
+photo.addEventListener("change", event => {
+
+  const file =
+    event.target.files?.[0];
+
+  if (!file) return;
+
+  avatar.src =
+    URL.createObjectURL(file);
+
+  status.textContent =
+    "照片已上传，可以开启摄像头。";
+
+});
+
+
+async function createFaceTracker() {
+
+  if (landmarker) return;
+
+  status.textContent =
+    "正在加载脸部识别模型……";
+
+  const vision =
+    await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
+    );
+
+  landmarker =
+    await FaceLandmarker.createFromOptions(
+      vision,
+      {
+        baseOptions: {
+
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+
+          delegate: "GPU"
+
+        },
+
+        runningMode: "VIDEO",
+
+        numFaces: 1,
+
+        outputFaceBlendshapes: true
+
+      }
+    );
+
+}
+
+
+function trackFace() {
+
+  if (!stream || !landmarker) {
+    return;
+  }
+
+  const result =
+    landmarker.detectForVideo(
+      video,
+      performance.now()
+    );
+
+
+  const face =
+    result.faceLandmarks?.[0];
+
+
+  const blend =
+    result.faceBlendshapes?.[0]?.categories || [];
+
+
+  if (face) {
+
+    const nose =
+      face[1];
+
+    const leftEye =
+      face[33];
+
+    const rightEye =
+      face[263];
+
+
+    const dx =
+      nose.x -
+      (leftEye.x + rightEye.x) / 2;
+
+
+    const dy =
+      nose.y -
+      (leftEye.y + rightEye.y) / 2;
+
+
+    const rotateX =
+      Math.max(
+        -12,
+        Math.min(12, dy * 45)
+      );
+
+
+    const rotateY =
+      Math.max(
+        -16,
+        Math.min(16, dx * 55)
+      );
+
+
+    const jaw =
+      blend.find(
+        x => x.categoryName === "jawOpen"
+      )?.score || 0;
+
+
+    const blink =
+      Math.max(
+        blend.find(
+          x => x.categoryName === "eyeBlinkLeft"
+        )?.score || 0,
+
+        blend.find(
+          x => x.categoryName === "eyeBlinkRight"
+        )?.score || 0
+      );
+
+
+    const scale =
+      1 + Math.min(
+        0.025,
+        jaw * 0.025
+      );
+
+
+    avatar.style.transform =
+      `
+      perspective(700px)
+      rotateX(${rotateX}deg)
+      rotateY(${rotateY}deg)
+      scale(${scale})
+      `;
+
+
+    avatar.style.filter =
+      `brightness(${1 - blink * 0.08})`;
+
+
+    status.textContent =
+      `脸部追踪中 · 张嘴 ${Math.round(jaw * 100)}% · 眨眼 ${Math.round(blink * 100)}%`;
+
+  }
+
+
+  animationFrame =
+    requestAnimationFrame(trackFace);
+
+}
+
+
+document.getElementById("start")
+.addEventListener("click", async () => {
+
+  if (!avatar.src) {
+
+    status.textContent =
+      "请先上传人物照片。";
+
+    return;
+
+  }
+
+
+  try {
+
+    await createFaceTracker();
+
+
+    status.textContent =
+      "正在请求摄像头权限……";
+
+
+    stream =
+      await navigator.mediaDevices.getUserMedia({
+
+        video: {
+
+          facingMode: "user",
+
+          width: {
+            ideal: 640
+          },
+
+          height: {
+            ideal: 480
+          }
+
+        },
+
+        audio: false
+
+      });
+
+
+    video.srcObject =
+      stream;
+
+    video.style.display =
+      "block";
+
+
+    await video.play();
+
+
+    status.textContent =
+      "摄像头已开启，正在追踪脸部。";
+
+
+    cancelAnimationFrame(
+      animationFrame
+    );
+
+    trackFace();
+
+
+  } catch (error) {
+
+    status.textContent =
+      "摄像头开启失败：" +
+      error.message;
+
+  }
+
+});
+
+
+document.getElementById("stop")
+.addEventListener("click", () => {
+
+  if (stream) {
+
+    stream
+      .getTracks()
+      .forEach(track => track.stop());
+
+  }
+
+
+  stream = null;
+
+
+  cancelAnimationFrame(
+    animationFrame
+  );
+
+
+  video.srcObject =
+    null;
+
+  video.style.display =
+    "none";
+
+
+  avatar.style.transform =
+    "";
+
+  avatar.style.filter =
+    "";
+
+
+  status.textContent =
+    "摄像头已停止。";
+
+});
+
+</script>
+
+</body>
+</html>
